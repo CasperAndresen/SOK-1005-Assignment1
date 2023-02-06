@@ -1,0 +1,90 @@
+---
+title: "SOK-1005-Assignment1"
+author: "30 | Casper Andresen"
+format: pdf
+editor: visual
+---
+
+```{r}
+rm(list=ls())
+
+library(tidyverse)
+library(lubridate)
+```
+
+Importing the data
+
+```{r}
+df_lt <- read_table("http://vortex.nsstc.uah.edu/data/msu/v6.0/tlt/uahncdc_lt_6.0.txt")
+df_mt <- read_table("http://vortex.nsstc.uah.edu/data/msu/v6.0/tmt/uahncdc_mt_6.0.txt")
+df_t <- read_table("http://vortex.nsstc.uah.edu/data/msu/v6.0/ttp/uahncdc_tp_6.0.txt")
+df_ls <- read_table("http://vortex.nsstc.uah.edu/data/msu/v6.0/tls/uahncdc_ls_6.0.txt")
+
+```
+
+Removing unwanted bottom text
+
+```{r}
+df_lt <- df_lt[1:which(df_lt$Year %in% "Year")-1, ]
+df_mt <- df_mt[1:which(df_mt$Year %in% "Year")-1, ]
+df_t <- df_t[1:which(df_t$Year %in% "Year")-1, ]
+df_ls <- df_ls[1:which(df_ls$Year %in% "Year")-1, ]
+```
+
+Combinding the globe column in each dataframe into a new dataframe and changing them to numeric
+
+```{r}
+df_global <- cbind(df_lt$Globe, df_mt$Globe, df_t$Globe, df_ls$Globe)
+df_global <- as.data.frame(df_global)
+
+df_global <- df_global %>%
+  rename(lt = V1) %>%
+  rename(mt = V2) %>%
+  rename(t = V3) %>%
+  rename(ls = V4)
+
+df_global <- df_global %>%
+  mutate_at(vars(lt, mt, t, ls), ~as.numeric(.))
+```
+
+Creating a Data variable using the year and month variable from the df_lt dataframe, then move it to the front
+
+```{r}
+df_global <- df_global %>% 
+  select(lt, mt, t, ls) %>%
+  mutate(Date = ymd(paste(df_lt$Year, df_lt$Mo, 1, sep="-"))) %>%
+  relocate(Date)
+
+```
+
+Calculating the rolling mean, filter out the dates I want
+
+```{r}
+df_global <- df_global %>%
+  mutate(average_lt = zoo::rollmean(lt, 13, na.pad = TRUE, align = "right")) %>%
+  mutate(average_mt = zoo::rollmean(mt, 13, na.pad = TRUE, align = "right")) %>%
+  mutate(average_t = zoo::rollmean(t, 13, na.pad = TRUE, align = "right")) %>%
+  mutate(average_ls = zoo::rollmean(ls, 13, na.pad = TRUE, align = "right")) %>%
+  filter(between(Date, as.Date("1980-1-1"), as.Date("2022-12-1")))
+```
+
+Putting it in a tall format so I can plot them all together
+
+```{r}
+df_tall <- df_global %>%
+  select(Date, average_lt, average_mt, average_t, average_ls) %>%
+  pivot_longer(-Date, names_to = "Location", values_to = "Temp")
+```
+
+Drawing the figure
+
+```{r}
+
+df_tall %>%
+  ggplot(aes(x=Date, y=Temp, color=Location)) + 
+  geom_line() +
+  labs(title = "Average temperature over time", subtitle = "Rolling average in the lower layers of the atmosphere. 1980 - 2022") +
+  ylab("Global Temperature") + xlab("Year") +
+  scale_color_discrete(labels=c("Lower Troposphere", "Mid-Troposphere", "Tropopause", "Lower Stratosphere")) +
+  geom_smooth(method = lm, se = FALSE)
+```
